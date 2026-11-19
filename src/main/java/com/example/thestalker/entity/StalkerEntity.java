@@ -56,7 +56,8 @@ public class StalkerEntity extends HostileEntity {
     private PaintingEntity entrancePainting;
     private PaintingEntity exitPainting;
     private int huntRepositionCooldown;
-    private int stalkingPauseTicks;\n    private boolean climbing;
+    private int stalkingPauseTicks;
+    private boolean climbing;
 
     /** The Hunter burns, screeches and flees at this light level or brighter. Full daylight is 15. */
     public static final int BURN_LIGHT_LEVEL = 10;
@@ -450,7 +451,8 @@ public class StalkerEntity extends HostileEntity {
         }
     }
 
-    public boolean isCrawling() { return crawling; }\n    public boolean isClimbing() { return climbing; }
+    public boolean isCrawling() { return crawling; }
+    public boolean isClimbing() { return climbing; }
     public int getTravelAnimation() { return dataTracker.get(TRAVEL_ANIMATION); }
     public int getTravelAnimationTicks() { return dataTracker.get(TRAVEL_PROGRESS); }
 
