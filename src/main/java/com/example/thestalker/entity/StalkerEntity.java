@@ -70,7 +70,7 @@ public class StalkerEntity extends HostileEntity {
     public static DefaultAttributeContainer.Builder createStalkerAttributes() {
         return HostileEntity.createHostileAttributes()
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 70.0)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.48)
+                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.24)
                 .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 56.0)
                 .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 14.0)
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.8);
@@ -103,8 +103,8 @@ public class StalkerEntity extends HostileEntity {
 
     @Override protected void initGoals() {
         goalSelector.add(0, new SwimGoal(this));
-        goalSelector.add(2, new MeleeAttackGoal(this, 1.45, true));
-        goalSelector.add(5, new WanderAroundFarGoal(this, 1.05));
+        goalSelector.add(2, new MeleeAttackGoal(this, 0.725, true));
+        goalSelector.add(5, new WanderAroundFarGoal(this, 0.525));
         goalSelector.add(6, new LookAtEntityGoal(this, PlayerEntity.class, 32.0f));
         goalSelector.add(7, new LookAroundGoal(this));
         targetSelector.add(1, new ActiveTargetGoal<>(this, PlayerEntity.class, true));
@@ -172,7 +172,7 @@ public class StalkerEntity extends HostileEntity {
         PlayerEntity target = getTarget() instanceof PlayerEntity p ? p : null;
         boolean truce = target != null && OfferingManager.isProtected(target);
         if (truce && target != null && target.isAlive() && age % 12 == 0) {
-            getNavigation().startMovingTo(target.getX(), target.getY(), target.getZ(), 1.28);
+            getNavigation().startMovingTo(target.getX(), target.getY(), target.getZ(), 0.64);
         }
         if (target != null) {
             if (canSee(target)) {
@@ -193,7 +193,7 @@ public class StalkerEntity extends HostileEntity {
             } else if (--investigateCooldown <= 0) {
                 investigateCooldown = 12;
                 getNavigation().startMovingTo(lastKnownPlayerPos.getX() + 0.5,
-                        lastKnownPlayerPos.getY(), lastKnownPlayerPos.getZ() + 0.5, 1.35);
+                        lastKnownPlayerPos.getY(), lastKnownPlayerPos.getZ() + 0.5, 0.675);
             }
         }
 
@@ -213,9 +213,9 @@ public class StalkerEntity extends HostileEntity {
             // Keep pursuing, but route through nearby darkness instead of blindly crossing lit floors.
             BlockPos darkApproach = findDarkApproach(world, target);
             if (darkApproach != null) {
-                getNavigation().startMovingTo(darkApproach.getX() + 0.5, darkApproach.getY(), darkApproach.getZ() + 0.5, 1.5);
+                getNavigation().startMovingTo(darkApproach.getX() + 0.5, darkApproach.getY(), darkApproach.getZ() + 0.5, 0.75);
             } else {
-                getNavigation().startMovingTo(target, 1.5);
+                getNavigation().startMovingTo(target, 0.75);
             }
             if (tickClimbing(world, target)) return;
             tickSlowBlockBreaking(world, target);
@@ -316,8 +316,8 @@ public class StalkerEntity extends HostileEntity {
         climbing = true;
         setNoGravity(true);
         getNavigation().stop();
-        double speed = 0.18;
-        setVelocity(horizontal.x * speed, Math.min(0.32, 0.18 + verticalGap * 0.025), horizontal.z * speed);
+        double speed = 0.09;
+        setVelocity(horizontal.x * speed, Math.min(0.16, 0.09 + verticalGap * 0.0125), horizontal.z * speed);
         return true;
     }
 

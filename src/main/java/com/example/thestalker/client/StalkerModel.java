@@ -102,11 +102,16 @@ public class StalkerModel<T extends Entity> extends EntityModel<T> {
             rightLeg.pitch = 1.0F - emerge * 0.8F;
             head.pitch = -0.25F + emerge * 0.3F;
         } else if (entity instanceof com.example.thestalker.entity.StalkerEntity crawlStalker && crawlStalker.isCrawling()) {
-            torso.pitch = 0.95F;
-            leftArm.pitch = -1.15F + swing * 0.35F;
-            rightArm.pitch = -1.15F - swing * 0.35F;
-            leftLeg.pitch = 0.85F - swing * 0.3F;
-            rightLeg.pitch = 0.85F + swing * 0.3F;
+            // Lower the torso clearly into a crawl posture, with alternating arm pulls and leg pushes.
+            float crawlSwing = MathHelper.sin(animationProgress * 0.32F) * 0.22F;
+            torso.pitch = 1.32F;
+            leftArm.pitch = -1.35F + crawlSwing;
+            rightArm.pitch = -1.35F - crawlSwing;
+            leftArm.roll = 0.28F;
+            rightArm.roll = -0.28F;
+            leftLeg.pitch = 1.05F - crawlSwing;
+            rightLeg.pitch = 1.05F + crawlSwing;
+            head.pitch = -0.22F;
         }
     }
 
