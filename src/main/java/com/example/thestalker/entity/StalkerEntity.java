@@ -1,0 +1,441 @@
+package com.example.thestalker.entity;
+
+import com.example.thestalker.block.ModBlocks;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.CandleBlock;
+import net.minecraft.block.CampfireBlock;
+import net.minecraft.entity.decoration.painting.PaintingEntity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.ai.goal.ActiveTargetGoal;
+import net.minecraft.entity.ai.goal.LookAroundGoal;
+import net.minecraft.entity.ai.goal.LookAtEntityGoal;
+import net.minecraft.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.Entity;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
+import net.minecraft.world.RaycastContext;
+import net.minecraft.util.hit.HitResult;
+
+/** The mobile Hunter. Its compact collision profile lets it navigate one-block-high tunnels. */
+public class StalkerEntity extends HostileEntity {
+    private static final TrackedData<Boolean> JUMPSCARE_POSE = DataTracker.registerData(StalkerEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    private static final TrackedData<Integer> TRAVEL_ANIMATION = DataTracker.registerData(StalkerEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final TrackedData<Integer> TRAVEL_PROGRESS = DataTracker.registerData(StalkerEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private boolean jumpscareDummy;
+    private boolean orphanedJumpscare;
+    private int torchSearchCooldown;
+    private int lightScreechCooldown;
+    private int darkSearchCooldown;
+    private int lostSightTicks;
+    private int investigateCooldown;
+    private BlockPos lastKnownPlayerPos;
+    private boolean crawling;
+    private int travelTicks;
+    private BlockPos travelExit;
+    private BlockPos travelEntrance;
+    private boolean travelThroughPainting;
+    private PaintingEntity entrancePainting;
+    private PaintingEntity exitPainting;
+    private int huntRepositionCooldown;
+    private int stalkingPauseTicks;
+
+    public StalkerEntity(EntityType<? extends HostileEntity> type, World world) { super(type, world); }
+
+    public static DefaultAttributeContainer.Builder createStalkerAttributes() {
+        return HostileEntity.createHostileAttributes()
+                .add(EntityAttributes.GENERIC_MAX_HEALTH, 70.0)
+                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.31)
+                .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 56.0)
+                .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 14.0)
+                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.8);
+    }
+
+    @Override protected void initDataTracker(DataTracker.Builder builder) {
+        super.initDataTracker(builder);
+        builder.add(JUMPSCARE_POSE, false);
+        builder.add(TRAVEL_ANIMATION, 0);
+        builder.add(TRAVEL_PROGRESS, 0);
+    }
+
+    public void prepareJumpscare() {
+        jumpscareDummy = true;
+        dataTracker.set(JUMPSCARE_POSE, true);
+        setAiDisabled(true);
+        setNoGravity(true);
+        setVelocity(Vec3d.ZERO);
+        setPersistent();
+    }
+
+    public boolean isJumpscarePose() { return dataTracker.get(JUMPSCARE_POSE); }
+
+    @Override protected void initGoals() {
+        goalSelector.add(0, new SwimGoal(this));
+        goalSelector.add(2, new MeleeAttackGoal(this, 1.08, true));
+        goalSelector.add(5, new WanderAroundFarGoal(this, 0.78));
+        goalSelector.add(6, new LookAtEntityGoal(this, PlayerEntity.class, 32.0f));
+        goalSelector.add(7, new LookAroundGoal(this));
+        targetSelector.add(1, new ActiveTargetGoal<>(this, PlayerEntity.class, true));
+    }
+
+    public static boolean canSpawn(EntityType<StalkerEntity> type, ServerWorldAccess world,
+                                   SpawnReason reason, BlockPos pos, net.minecraft.util.math.random.Random random) {
+        return world.getLightLevel(pos) <= 3 && world.getBlockState(pos.down()).isSolidBlock(world, pos.down());
+    }
+
+    @Override public void writeCustomDataToNbt(net.minecraft.nbt.NbtCompound nbt) {
+        super.writeCustomDataToNbt(nbt);
+        if (jumpscareDummy) nbt.putBoolean("JumpscareDummy", true);
+    }
+
+    @Override public void readCustomDataFromNbt(net.minecraft.nbt.NbtCompound nbt) {
+        super.readCustomDataFromNbt(nbt);
+        // The scripted kill is memory-only, so a saved grabber has no purpose after a reload.
+        if (nbt.getBoolean("JumpscareDummy")) orphanedJumpscare = true;
+    }
+
+    @Override public void tick() {
+        if (orphanedJumpscare && !getWorld().isClient) { discard(); return; }
+        super.tick();
+        if (jumpscareDummy) {
+            setVelocity(Vec3d.ZERO);
+            return;
+        }
+        updateCrawlPose();
+        if (getWorld().isClient) return;
+        ServerWorld world = (ServerWorld) getWorld();
+        // Travel state is not saved; never leave a Hunter permanently invisible after a reload.
+        if (dataTracker.get(TRAVEL_ANIMATION) == 0 && isInvisible()) setInvisible(false);
+        if (tickEnvironmentalTravel(world)) return;
+        int light = world.getLightLevel(getBlockPos());
+
+        if (light >= 4) {
+            setOnFireFor(2);
+            getNavigation().stop();
+            if (--lightScreechCooldown <= 0) {
+                lightScreechCooldown = 35;
+                world.playSound(null, getBlockPos(), SoundEvents.ENTITY_GHAST_SCREAM, SoundCategory.HOSTILE, 1.0f, 0.62f + random.nextFloat() * 0.16f);
+            }
+            if (age % 3 == 0) world.spawnParticles(ParticleTypes.SMOKE, getX(), getY() + 0.8, getZ(), 4, 0.22, 0.35, 0.22, 0.015);
+            // Actively seek a dark pocket instead of standing still and burning forever.
+            if (--darkSearchCooldown <= 0) {
+                darkSearchCooldown = 12;
+                seekDarkness(world);
+            }
+        }
+
+        if (--torchSearchCooldown <= 0) {
+            torchSearchCooldown = 55 + random.nextInt(65);
+            extinguishNearbyTorch(world);
+        }
+
+        // A brief, unnatural pause when a player is looking directly at it from a distance.
+        PlayerEntity target = getTarget() instanceof PlayerEntity p ? p : null;
+        boolean truce = target != null && OfferingManager.isProtected(target);
+        if (truce && target != null && target.isAlive() && age % 12 == 0) {
+            getNavigation().startMovingTo(target.getX(), target.getY(), target.getZ(), 1.28);
+        }
+        if (target != null) {
+            if (canSee(target)) {
+                lastKnownPlayerPos = target.getBlockPos().toImmutable();
+                lostSightTicks = 0;
+            } else if (++lostSightTicks > 45) {
+                // Stop chasing an unseen player blindly; investigate their last known position.
+                setTarget(null);
+                lostSightTicks = 0;
+            }
+            if (target.squaredDistanceTo(this) > 64 && target.canSee(this)
+                    && target.getRotationVec(1.0f).dotProduct(getPos().subtract(target.getEyePos()).normalize()) > 0.985) {
+                getNavigation().stop();
+            }
+        } else if (lastKnownPlayerPos != null) {
+            if (getBlockPos().getSquaredDistance(lastKnownPlayerPos) <= 4 || age % 240 == 0) {
+                lastKnownPlayerPos = null;
+            } else if (--investigateCooldown <= 0) {
+                investigateCooldown = 30;
+                getNavigation().startMovingTo(lastKnownPlayerPos.getX() + 0.5,
+                        lastKnownPlayerPos.getY(), lastKnownPlayerPos.getZ() + 0.5, 0.92);
+            }
+        }
+
+        // It does not always charge. It occasionally breaks line of sight and approaches from another angle.
+        if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
+                && target.canSee(this) && --huntRepositionCooldown <= 0) {
+            huntRepositionCooldown = 100 + random.nextInt(100);
+            stalkingPauseTicks = 18 + random.nextInt(24);
+            getNavigation().stop();
+        }
+        if (stalkingPauseTicks > 0) {
+            stalkingPauseTicks--;
+            if (target != null && target.squaredDistanceTo(this) > 64) getNavigation().stop();
+        }
+
+        // Use a dark container or painting as a short-range ambush route, but only after snuffing nearby flames.
+        if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
+                && target.squaredDistanceTo(this) < 30 * 30 && age % (truce ? 12 : 30) == 0) {
+            tryBeginEnvironmentalTravel(world, target);
+        }
+    }
+
+    private boolean tickEnvironmentalTravel(ServerWorld world) {
+        int state = dataTracker.get(TRAVEL_ANIMATION);
+        if (state == 0) return false;
+        travelTicks++;
+        dataTracker.set(TRAVEL_PROGRESS, travelTicks);
+        getNavigation().stop();
+        setVelocity(Vec3d.ZERO);
+
+        // Phase 1: the Hunter melts into the darkness. It does not need a second container to travel from.
+        if (state == 1) {
+            if (travelTicks == 1) {
+                world.playSound(null, getBlockPos(), SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundCategory.HOSTILE, 0.8f, 0.55f);
+                world.spawnParticles(ParticleTypes.LARGE_SMOKE, getX(), getY() + 0.45, getZ(), 22, 0.3, 0.45, 0.3, 0.025);
+                setInvisible(true);
+            }
+            if (travelTicks >= 16) {
+                if (travelExit != null) {
+                    Vec3d emergence = getEmergencePosition(world, travelExit, travelThroughPainting);
+                    refreshPositionAndAngles(emergence.x, emergence.y, emergence.z, getYaw(), 0);
+                }
+                dataTracker.set(TRAVEL_ANIMATION, 2);
+                travelTicks = 0;
+                dataTracker.set(TRAVEL_PROGRESS, 0);
+            }
+            return true;
+        }
+
+        // Phase 2: burst out of the selected hiding place, hands first.
+        if (state == 2) {
+            if (travelTicks == 1) {
+                setInvisible(false);
+                world.playSound(null, travelExit == null ? getBlockPos() : travelExit,
+                        travelThroughPainting ? SoundEvents.ENTITY_ENDERMAN_STARE : SoundEvents.BLOCK_CHEST_OPEN,
+                        SoundCategory.BLOCKS, 1.0f, 0.55f);
+                world.spawnParticles(ParticleTypes.LARGE_SMOKE, getX(), getY() + 0.55, getZ(), 26, 0.28, 0.45, 0.28, 0.035);
+                world.spawnParticles(ParticleTypes.PORTAL, getX(), getY() + 0.6, getZ(), 18, 0.2, 0.35, 0.2, 0.08);
+                if (!travelThroughPainting && travelExit != null
+                        && (world.getBlockState(travelExit).isOf(Blocks.CHEST)
+                        || world.getBlockState(travelExit).isOf(Blocks.TRAPPED_CHEST)))
+                    world.addSyncedBlockEvent(travelExit, world.getBlockState(travelExit).getBlock(), 1, 1);
+            }
+            if (travelTicks >= 24) {
+                if (!travelThroughPainting && travelExit != null
+                        && (world.getBlockState(travelExit).isOf(Blocks.CHEST)
+                        || world.getBlockState(travelExit).isOf(Blocks.TRAPPED_CHEST)))
+                    world.addSyncedBlockEvent(travelExit, world.getBlockState(travelExit).getBlock(), 1, 0);
+                dataTracker.set(TRAVEL_ANIMATION, 0);
+                travelTicks = 0;
+                dataTracker.set(TRAVEL_PROGRESS, 0);
+                travelExit = null;
+                exitPainting = null;
+                travelThroughPainting = false;
+                setTarget(null);
+                stalkingPauseTicks = 30;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private Vec3d getEmergencePosition(ServerWorld world, BlockPos hidingPlace, boolean painting) {
+        if (painting && exitPainting != null && exitPainting.isAlive()) {
+            net.minecraft.util.math.Direction facing = exitPainting.getHorizontalFacing();
+            return new Vec3d(exitPainting.getX() + facing.getOffsetX() * 0.75,
+                    exitPainting.getY() + 0.15, exitPainting.getZ() + facing.getOffsetZ() * 0.75);
+        }
+        BlockState state = world.getBlockState(hidingPlace);
+        net.minecraft.util.math.Direction facing = state.contains(net.minecraft.block.HorizontalFacingBlock.FACING)
+                ? state.get(net.minecraft.block.HorizontalFacingBlock.FACING) : getHorizontalFacing();
+        // Chests/furnaces are solid props: the creature emerges from their player-facing side.
+        BlockPos front = hidingPlace.offset(facing);
+        if (!world.getBlockState(front).isAir() || !world.getBlockState(front.up()).isAir()) front = hidingPlace.offset(facing.getOpposite());
+        return new Vec3d(front.getX() + 0.5, front.getY(), front.getZ() + 0.5);
+    }
+
+    /** A home ambush is local to the player: the Hunter vanishes, then crawls out of one nearby prop. */
+    private void tryBeginEnvironmentalTravel(ServerWorld world, PlayerEntity target) {
+        if (dataTracker.get(TRAVEL_ANIMATION) != 0 || stalkingPauseTicks > 0 || random.nextFloat() > 0.24f) return;
+        BlockPos hidingPlace = findHomeHidingPlace(world, target.getBlockPos(), 11);
+        if (hidingPlace == null) return;
+
+        // The extinguishing is deliberately visible and happens before the creature vanishes.
+        extinguishAllNearbyFlames(world, hidingPlace, 8);
+        if (hasNearbyFlame(world, hidingPlace, 8)) return;
+
+        exitPainting = findPainting(world, target.getPos(), 11);
+        boolean painting = exitPainting != null && exitPainting.getBlockPos().equals(hidingPlace);
+        if (painting) {
+            // The painting entity itself is the hiding place; its backing block need not be air.
+        } else {
+            exitPainting = null;
+        }
+        travelExit = hidingPlace.toImmutable();
+        travelThroughPainting = painting;
+        travelTicks = 0;
+        dataTracker.set(TRAVEL_ANIMATION, 1);
+        setTarget(null);
+        getNavigation().stop();
+    }
+
+    private BlockPos findHomeHidingPlace(ServerWorld world, BlockPos center, int radius) {
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.iterateOutwards(center, radius, 4, radius)) {
+            BlockState state = world.getBlockState(pos);
+            boolean chest = state.isOf(Blocks.CHEST) || state.isOf(Blocks.TRAPPED_CHEST);
+            boolean furnace = state.isOf(Blocks.FURNACE) && (!state.contains(net.minecraft.block.AbstractFurnaceBlock.LIT)
+                    || !state.get(net.minecraft.block.AbstractFurnaceBlock.LIT));
+            if (!chest && !furnace) continue;
+            BlockPos front = pos.offset(state.contains(net.minecraft.block.HorizontalFacingBlock.FACING)
+                    ? state.get(net.minecraft.block.HorizontalFacingBlock.FACING) : getHorizontalFacing());
+            if (!world.getBlockState(front).isAir() || !world.getBlockState(front.up()).isAir()) continue;
+            double d = pos.getSquaredDistance(center);
+            if (d < bestDistance) { best = pos.toImmutable(); bestDistance = d; }
+        }
+        if (best != null) return best;
+        PaintingEntity painting = findPainting(world, Vec3d.ofCenter(center), radius);
+        return painting == null ? null : painting.getBlockPos().toImmutable();
+    }
+
+    private PaintingEntity findPainting(ServerWorld world, Vec3d center, double radius) {
+        net.minecraft.util.math.Box box = new net.minecraft.util.math.Box(center.x-radius, center.y-radius, center.z-radius,
+                center.x+radius, center.y+radius, center.z+radius);
+        return world.getOtherEntities(this, box, e -> e instanceof PaintingEntity)
+                .stream().filter(e -> e instanceof PaintingEntity).map(e -> (PaintingEntity)e)
+                .min((a,b) -> Double.compare(a.squaredDistanceTo(center.x, center.y, center.z), b.squaredDistanceTo(center.x, center.y, center.z))).orElse(null);
+    }
+
+    private void extinguishAllNearbyFlames(ServerWorld world, BlockPos center, int radius) {
+        for (BlockPos pos : BlockPos.iterateOutwards(center, radius, 4, radius)) {
+            BlockState state = world.getBlockState(pos);
+            if (state.isOf(Blocks.TORCH) || state.isOf(Blocks.WALL_TORCH)) {
+                BlockState replacement = state.isOf(Blocks.WALL_TORCH)
+                        ? ModBlocks.UNLIT_WALL_TORCH.getDefaultState().with(net.minecraft.block.WallTorchBlock.FACING, state.get(net.minecraft.block.WallTorchBlock.FACING))
+                        : ModBlocks.UNLIT_TORCH.getDefaultState();
+                world.setBlockState(pos, replacement, 3);
+                puffSmoke(world, pos);
+            } else if (state.isOf(Blocks.LANTERN)) {
+                world.setBlockState(pos, ModBlocks.UNLIT_LANTERN.getDefaultState().with(net.minecraft.block.LanternBlock.HANGING, state.get(net.minecraft.block.LanternBlock.HANGING)), 3);
+                puffSmoke(world, pos);
+            } else if (state.isOf(Blocks.SOUL_LANTERN)) {
+                world.setBlockState(pos, ModBlocks.UNLIT_SOUL_LANTERN.getDefaultState().with(net.minecraft.block.LanternBlock.HANGING, state.get(net.minecraft.block.LanternBlock.HANGING)), 3);
+                puffSmoke(world, pos);
+            } else if (state.getBlock() instanceof CandleBlock && state.contains(CandleBlock.LIT) && state.get(CandleBlock.LIT)) {
+                CandleBlock.extinguish(null, state, world, pos); puffSmoke(world, pos);
+            } else if (state.isOf(Blocks.CAMPFIRE) && state.get(CampfireBlock.LIT)) {
+                CampfireBlock.extinguish(null, world, pos, state); puffSmoke(world, pos);
+            }
+        }
+    }
+
+    private void puffSmoke(ServerWorld world, BlockPos pos) {
+        world.spawnParticles(ParticleTypes.LARGE_SMOKE, pos.getX()+0.5, pos.getY()+0.65, pos.getZ()+0.5, 10, 0.16, 0.22, 0.16, 0.025);
+        world.playSound(null, pos, SoundEvents.BLOCK_CANDLE_EXTINGUISH, SoundCategory.BLOCKS, 0.75f, 0.65f);
+    }
+
+    private boolean hasNearbyFlame(ServerWorld world, BlockPos center, int radius) {
+        for (BlockPos pos : BlockPos.iterateOutwards(center, radius, 4, radius)) {
+            BlockState state = world.getBlockState(pos);
+            if (state.isOf(Blocks.TORCH) || state.isOf(Blocks.WALL_TORCH) || state.isOf(Blocks.LANTERN) || state.isOf(Blocks.SOUL_LANTERN)) return true;
+            if (state.getBlock() instanceof CandleBlock && state.contains(CandleBlock.LIT) && state.get(CandleBlock.LIT)) return true;
+            if (state.isOf(Blocks.CAMPFIRE) && state.get(CampfireBlock.LIT)) return true;
+        }
+        return false;
+    }
+
+
+    @Override
+    public boolean tryAttack(Entity target) {
+        if (target instanceof PlayerEntity player && OfferingManager.isProtected(player)) {
+            // During a paid truce the Hunter may approach and threaten, but cannot hurt the player.
+            if (getWorld() instanceof ServerWorld serverWorld)
+                serverWorld.spawnParticles(ParticleTypes.SMOKE, target.getX(), target.getY() + 0.8, target.getZ(), 3, 0.18, 0.22, 0.18, 0.01);
+            return false;
+        }
+        return super.tryAttack(target);
+    }
+
+    private void updateCrawlPose() {
+        BlockPos overhead = getBlockPos().up();
+        boolean next = !getWorld().getBlockState(overhead).isAir();
+        if (next != crawling) {
+            crawling = next;
+            calculateDimensions();
+        }
+    }
+
+    public boolean isCrawling() { return crawling; }
+    public int getTravelAnimation() { return dataTracker.get(TRAVEL_ANIMATION); }
+    public int getTravelAnimationTicks() { return dataTracker.get(TRAVEL_PROGRESS); }
+
+    @Override public net.minecraft.entity.EntityDimensions getDimensions(net.minecraft.entity.EntityPose pose) {
+        // The hitbox follows the visible model: tall while standing, compact only while crawling
+        // under a low ceiling, with a matching eye height so line-of-sight checks make sense.
+        if (crawling) return net.minecraft.entity.EntityDimensions.changing(0.6f, 0.9f).withEyeHeight(0.7f);
+        return net.minecraft.entity.EntityDimensions.changing(0.7f, 1.95f).withEyeHeight(1.7f);
+    }
+
+    private void seekDarkness(ServerWorld world) {
+        BlockPos origin = getBlockPos();
+        BlockPos best = null;
+        int bestLight = world.getLightLevel(origin);
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.iterateOutwards(origin, 10, 4, 10)) {
+            if (!world.isAir(pos) || !world.isAir(pos.up()) || !world.getBlockState(pos.down()).isSolidBlock(world, pos.down())) continue;
+            int light = world.getLightLevel(pos);
+            double distance = pos.getSquaredDistance(origin);
+            if (light < bestLight || (light == bestLight && distance < bestDistance)) {
+                best = pos.toImmutable(); bestLight = light; bestDistance = distance;
+            }
+        }
+        if (best != null && bestLight <= 3) getNavigation().startMovingTo(best.getX() + 0.5, best.getY(), best.getZ() + 0.5, 1.15);
+    }
+
+    private void extinguishNearbyTorch(ServerWorld world) {
+        BlockPos origin = getBlockPos();
+        BlockPos chosen = null;
+        double best = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.iterateOutwards(origin, 8, 4, 8)) {
+            BlockState state = world.getBlockState(pos);
+            boolean floorTorch = state.isOf(Blocks.TORCH);
+            boolean wallTorch = state.isOf(Blocks.WALL_TORCH);
+            if (!floorTorch && !wallTorch) continue;
+            double distance = pos.getSquaredDistance(origin);
+            if (distance >= best || distance > 64) continue;
+            HitResult hit = world.raycast(new RaycastContext(getPos().add(0, crawling ? 0.55 : 1.1, 0),
+                    Vec3d.ofCenter(pos), RaycastContext.ShapeType.OUTLINE,
+                    RaycastContext.FluidHandling.NONE, this));
+            if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(pos)) {
+                best = distance;
+                chosen = pos.toImmutable();
+            }
+        }
+        if (chosen == null) return;
+        BlockState old = world.getBlockState(chosen);
+        BlockState replacement = old.isOf(Blocks.WALL_TORCH)
+                ? ModBlocks.UNLIT_WALL_TORCH.getDefaultState().with(net.minecraft.block.WallTorchBlock.FACING,
+                    old.get(net.minecraft.block.WallTorchBlock.FACING))
+                : ModBlocks.UNLIT_TORCH.getDefaultState();
+        world.setBlockState(chosen, replacement, 3);
+        world.spawnParticles(ParticleTypes.LARGE_SMOKE, chosen.getX() + 0.5, chosen.getY() + 0.8, chosen.getZ() + 0.5, 5, 0.12, 0.18, 0.12, 0.025);
+        world.spawnParticles(ParticleTypes.SMOKE, chosen.getX() + 0.5, chosen.getY() + 0.8, chosen.getZ() + 0.5, 12, 0.08, 0.12, 0.08, 0.015);
+        world.playSound(null, chosen, SoundEvents.BLOCK_CANDLE_EXTINGUISH, SoundCategory.BLOCKS, 0.9f, 0.65f);
+    }
+}

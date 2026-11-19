@@ -1,0 +1,103 @@
+# The Stalker — Fabric 1.21.1
+
+A dark-survival horror mod prototype for Minecraft Java Edition 1.21.1. Requires Java 21, Fabric Loader, and Fabric API.
+
+## Current source features
+
+### The Observer
+- A separate, stationary sighting entity with no conventional AI goals.
+- Naturally spawns rarely in dark Overworld locations.
+- Appears at normal hostile-mob spawn distances, watches the area, and dissolves when a player gets within roughly 4.5 blocks.
+- Disappearance combines an expanding smoke cloud, teleport sound, and a 12-tick scale-down animation.
+- The original block position, dimension, player UUID, and a random 200–400 tick delay are recorded server-side.
+
+### The delayed ambush
+- The ambush is tied to the Observer's original block position, with a 1.65-block trigger radius around its center.
+- It only triggers if the player returns after the timer and their current light level is 0–2.
+- Entering the trigger area at light level 3 or higher cancels the pending ambush.
+- On trigger, a no-AI Stalker is spawned directly behind the player in a raised-arm grab pose, a client packet starts a brief screen-grab overlay, and the server turns the player around.
+- The grabber is removed and the player is killed 10 ticks later. Server-side checks remain authoritative; this is a short model-and-overlay cinematic rather than a multi-stage animation rig.
+
+### The Hunter
+- A separate hostile entity with melee, wandering, swimming, target acquisition, and look behaviours.
+- Its hitbox matches its model (tall when standing, compact only while crawling beneath a low ceiling), and its model folds into a crawl pose there.
+- Tracks players, remembers last-known positions, investigates when line of sight is lost, pauses when watched at range, and periodically breaks its approach to make stalking less predictable.
+- Seeks dark cover when exposed to light level 4+; light level 4+ causes burning, smoke, and repeated screeches.
+- Periodically extinguishes visible torches and converts them into relightable unlit torches.
+- Has a local home-ambush jumpscare: when the player is near a chest, an unlit furnace, or a painting, the Hunter can vanish and crawl out of that nearby prop. It does not need a second container as an entrance or an exit.
+- Before emerging, it snuffs nearby torches, lanterns, soul lanterns, candles, and campfires. The lights go out first; only then does the Hunter disappear and begin its emergence.
+- A chest opens as the Hunter crawls out; a painting releases a burst of portal particles; an unlit furnace releases a burst of smoke as the creature unfolds from its front.
+- The emergence animation is synchronized to clients, with hands reaching out first and the torso and legs dragging into view.
+
+### Torches
+- Floor and wall torches can be extinguished by the Hunter.
+- Unlit torches emit no light and can be relit with a right-click.
+- Extinguishing and relighting use smoke/flame particles and sounds.
+
+## Development status / limitations
+
+This is a substantial source prototype, not a verified release build. The current environment does not have Gradle installed and cannot reach the Gradle distribution host, so a Gradle compile or in-game test could not be run here. In particular, the client rendering/networking callbacks and exact runtime behaviour still need validation in a real 1.21.1 Fabric dev client. The jumpscare remains a screen overlay and camera turn paired with a raised-arm entity grab pose; it is not a full player-skeleton grab animation. The local container ambush is an initial implementation: supported extinguishable lights are torches, lanterns, soul lanterns, candles, and campfires; permanent blocks such as glowstone and sea lanterns cannot be blown out. Furnaces are eligible only while unlit. The Hunter crawls when it finds itself under a low ceiling, but vanilla pathfinding plans with the standing hitbox, so it will not deliberately route into one-block-high gaps.
+
+## Build
+
+Install a Java 21 JDK and Gradle 8.8 or use your preferred Gradle installation. From this folder run:
+
+```bash
+gradle build
+```
+
+The output JAR, if the build succeeds, will be in `build/libs/`.
+
+## Testing commands
+
+```mcfunction
+/summon thestalker:observer
+/summon thestalker:stalker
+/give @s thestalker:unlit_torch
+/give @s thestalker:unlit_wall_torch
+/give @s thestalker:unlit_lantern
+/give @s thestalker:unlit_soul_lantern
+```
+
+The entities also have low-weight natural Overworld spawn entries and darkness-based spawn restrictions.
+
+
+### Local container ambushes (0.4.0)
+
+The Hunter can vanish and emerge directly from a chest, an unlit furnace, or a painting near the player. It first extinguishes nearby torches, lanterns, candles, and campfires. This is a jumpscare/hiding-place mechanic, not container-to-container travel. Lit lanterns become unlit lantern blocks; right-click them to relight them. Soul lanterns have the same treatment. Furnaces are only eligible when their `LIT` state is false.
+
+
+## v0.5.0 — Soul-sand offering
+
+- Dropping soul sand within 2.5 blocks of a player, on a spot with block light 3 or lower, can trigger an offering. The ground answers with a rising hand-like animation made from soul wisps, soul-fire motes, and smoke; one soul sand is consumed.
+- After the 28-tick offering animation, that player receives a 24,000-tick (one Minecraft day) truce. The Stalker continues to seek and follow the player more insistently, but its melee attacks and Observer-triggered delayed jumpscares are suppressed for the truce.
+- The offering is player-specific. Other players are not protected by someone else's offering.
+
+**Prototype limitation:** truce timers currently live in server memory and are cleared by a full server restart. The hand is particle-animated rather than a separately modelled hand entity. A later persistence/animation pass can make both survive restarts and render as a fully articulated hand.
+
+
+## v0.5.1 — Reliability pass
+
+- Offering protection now uses the Overworld game-time clock, so changing dimensions does not alter the 24,000-tick truce duration. (The timer is still memory-only and resets on server restart.)
+- Observer target selection now explicitly chooses the closest eligible nearby player instead of relying on the order returned by the world player list.
+- A delayed Observer jumpscare is cancelled if the player dies, enters Creative/Spectator, changes dimension during the grab, or disconnects.
+- The delayed kill is no longer scheduled if the grabber entity fails to spawn, preventing an invisible/unexplained death.
+- Chest opening/closing block events now support trapped chests as well as regular chests.
+
+The source was reviewed and resource files were checked, but no Gradle compilation or Minecraft runtime test was possible in this environment.
+
+
+## v0.5.2 — Bug-fix pass
+
+- **Networking:** the jumpscare packet now uses the 1.20.5+ `CustomPayload` API (`JumpscarePayload`) instead of the removed buffer-based API.
+- **Camera turn:** the ambush now turns the player with a teleport request so the client camera really rotates.
+- **Compile fixes:** `tryAttack(Entity)` uses the 1.21.1 signature; `addSyncedBlockEvent` receives a `Block`; `UnlitTorchBlock` takes a `SimpleParticleType`.
+- **Loot tables:** moved to `data/thestalker/loot_table/` (singular, required since 1.21) so unlit torches and lanterns drop again.
+- **Torch snuffing:** no longer gated on the Hunter's own light level, so it actually fires near torches.
+- **Targeting:** the Hunter now loses track of a player based on *its* line of sight to them, not theirs to it.
+- **Hitbox:** pose-aware dimensions with matching eye height; fixes the 0.92-block hitbox on a ~2-block model.
+- **Painting ambush:** removed the unsupported painting invisibility; the portal particles carry the effect.
+- **Persistence safety:** a jumpscare grabber saved mid-scare is removed on reload, and a Hunter can no longer stay invisible after a reload mid-travel.
+- **Offering:** the light check now uses block light, as documented; a half-finished offering animation is dropped on disconnect.
+
+Still unverified: no Gradle compile or in-game test was possible. Truce timers are still memory-only.
