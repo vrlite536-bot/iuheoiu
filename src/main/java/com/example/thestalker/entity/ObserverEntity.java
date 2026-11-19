@@ -23,6 +23,12 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
     private PlayerEntity watchedPlayer;
     private int brightTicks;
     private int screechCooldown;
+    private boolean exhaledWave;
+
+    /** A player this close makes the Observer exhale a wave that snuffs nearby lights (once). */
+    private static final double WAVE_TRIGGER_RANGE = 16.0;
+    /** How far from the Observer the wave reaches, in blocks. */
+    private static final int WAVE_RADIUS = 16;
 
     public ObserverEntity(EntityType<? extends ObserverEntity> type, World world) { super(type, world); }
 
@@ -37,6 +43,9 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
     }
 
     @Override protected void initGoals() { /* Observer intentionally has no conventional AI goals. */ }
+
+    /** Vanilla stops a pack after 4 mobs per chunk; Observers spawn in packs of up to 10. */
+    @Override public int getLimitPerChunk() { return 10; }
 
     @Override public void tick() {
         super.tick();
@@ -62,6 +71,14 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
             if (++brightTicks >= 24) { discard(); return; }
         } else {
             brightTicks = 0;
+        }
+        if (!exhaledWave) {
+            boolean playerNear = !world.getPlayers(p -> p.isAlive() && !p.isCreative() && !p.isSpectator()
+                    && p.squaredDistanceTo(this) < WAVE_TRIGGER_RANGE * WAVE_TRIGGER_RANGE).isEmpty();
+            if (playerNear) {
+                exhaledWave = true; // only ever once, even if there was nothing to snuff
+                LightWaveManager.start(world, getPos().add(0, 0.8, 0), WAVE_RADIUS, LightWaveManager.MAX_SOURCES);
+            }
         }
         List<ServerPlayerEntity> nearby = world.getPlayers(p -> p.isAlive() && !p.isCreative()
                 && !p.isSpectator() && p.squaredDistanceTo(this) < 20.25);

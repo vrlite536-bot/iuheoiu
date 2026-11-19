@@ -1,5 +1,7 @@
 package com.example.thestalker.block;
 
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.TorchBlock;
@@ -15,6 +17,11 @@ import net.minecraft.world.World;
 
 public class UnlitTorchBlock extends TorchBlock {
     public UnlitTorchBlock(SimpleParticleType particle, Settings settings) { super(particle, settings); }
+
+    /** Unlit torches are cold: no ambient smoke or flame particles. */
+    @Override
+    @Environment(EnvType.CLIENT)
+    public void randomDisplayTick(BlockState state, World world, BlockPos pos, net.minecraft.util.math.random.Random random) {}
 
     @Override
     public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {

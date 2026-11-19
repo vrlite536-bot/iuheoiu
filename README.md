@@ -6,7 +6,8 @@ A dark-survival horror mod prototype for Minecraft Java Edition 1.21.1. Requires
 
 ### The Observer
 - A separate, stationary sighting entity with no conventional AI goals.
-- Naturally spawns rarely in dark Overworld locations.
+- Naturally spawns, not often, in dark Overworld locations (light level 3 or lower, mostly caves), in packs of 1-10.
+- The first time a player comes within 16 blocks, it exhales a wave: an expanding ring of cloud particles that snuffs up to 5 nearby lights (torches, lanterns, candles, campfires), nearest first, each going out as the ring reaches it. Relight them by right-clicking the unlit blocks.
 - Appears at normal hostile-mob spawn distances, watches the area, and dissolves when a player gets within roughly 4.5 blocks.
 - Disappearance combines an expanding smoke cloud, teleport sound, and a 12-tick scale-down animation.
 - The original block position, dimension, player UUID, and a random 200–400 tick delay are recorded server-side.
@@ -59,7 +60,7 @@ The output JAR, if the build succeeds, will be in `build/libs/`.
 /give @s thestalker:unlit_soul_lantern
 ```
 
-The entities also have natural Overworld spawn entries (Hunter weight 25, Observer weight 5) and light-based spawn restrictions (the Hunter spawns below light level 10).
+The entities also have natural Overworld spawn entries (Hunter weight 25; Observer weight 3 in packs of 1-10) and light-based spawn restrictions (the Hunter spawns below light level 10).
 
 
 ### Local container ambushes (0.4.0)
@@ -108,3 +109,10 @@ Still unverified: no Gradle compile or in-game test was possible. Truce timers a
 - **Burn threshold:** the Hunter now only burns at light level 10 or higher (`StalkerEntity.BURN_LIGHT_LEVEL`). The same value controls where it may spawn and when it runs for cover. The Observer is unchanged (still burns at 4+).
 - **Frequency:** natural Hunter spawn weight raised from 2 to 25, and a new `StalkerDirector` sends a Hunter after every survival player in the Overworld from the first minute. Every 10 seconds, a player with no Hunter within 64 blocks has a 50% chance of one appearing 22-38 blocks away, out of sight and below light level 10, already heading for them. Idle Hunters are re-pointed at the player 60% of the time. Creative and spectator players and Peaceful difficulty are skipped. All numbers are constants at the top of `StalkerDirector.java`.
 - **Unlit torch:** texture redrawn on the vanilla torch layout (2px stick, burnt-out tip), cutout render layer registered for torches and lanterns (fixes black boxes), wall-torch rotations corrected, torch items now use a flat sprite.
+
+
+## v0.5.4
+
+- **Observer spawning:** rarer (weight 5 down to 3) but now spawns in packs of 1-10, and `getLimitPerChunk` is raised to 10 so vanilla's default cap of 4 per chunk no longer truncates packs. Observers only spawn at light level 3 or lower, so look in caves and dark rooms.
+- **Light wave:** new `LightWaveManager`. An Observer exhales one wave the first time a player comes within 16 blocks. A wave snuffs up to 5 lights within 16 blocks, with an expanding ring of cloud particles, a gust at each light and a swooping sound. `start(...)` is reusable, so any mob can cast one. Constants are at the top of `ObserverEntity.java` and `LightWaveManager.java`.
+- **Unlit torches** (floor and wall) no longer emit ambient smoke.
