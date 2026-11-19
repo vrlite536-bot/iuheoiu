@@ -8,6 +8,9 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.hit.HitResult;
+import net.minecraft.world.RaycastContext;
 import net.minecraft.world.World;
 import net.minecraft.world.ServerWorldAccess;
 import net.minecraft.entity.SpawnReason;
@@ -44,8 +47,8 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
 
     @Override protected void initGoals() { /* Observer intentionally has no conventional AI goals. */ }
 
-    /** Vanilla stops a pack after 4 mobs per chunk; Observers spawn in packs of up to 10. */
-    @Override public int getLimitPerChunk() { return 10; }
+    /** Allow larger Observer groups to coexist in the same chunk. */
+    @Override public int getLimitPerChunk() { return 20; }
 
     @Override public void tick() {
         super.tick();
@@ -68,7 +71,7 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
                 world.playSound(null, getBlockPos(), SoundEvents.ENTITY_GHAST_SCREAM, SoundCategory.HOSTILE, 0.8f, 0.58f);
             }
             if (age % 3 == 0) world.spawnParticles(ParticleTypes.SMOKE, getX(), getY() + 0.9, getZ(), 4, 0.18, 0.28, 0.18, 0.015);
-            if (++brightTicks >= 24) { discard(); return; }
+            // Light makes it react, but light alone never makes an Observer disappear.
         } else {
             brightTicks = 0;
         }
@@ -80,21 +83,31 @@ public class ObserverEntity extends net.minecraft.entity.mob.HostileEntity {
                 LightWaveManager.start(world, getPos().add(0, 0.8, 0), WAVE_RADIUS, LightWaveManager.MAX_SOURCES);
             }
         }
-        List<ServerPlayerEntity> nearby = world.getPlayers(p -> p.isAlive() && !p.isCreative()
-                && !p.isSpectator() && p.squaredDistanceTo(this) < 20.25);
-        if (!nearby.isEmpty()) {
-            // Select the closest eligible player deterministically; getPlayers() ordering
-            // is not a reliable way to choose which player the Observer is watching.
-            ServerPlayerEntity player = nearby.stream()
+        // Only dissolve when an eligible player is directly looking at the Observer,
+        // within gaze range and with an unobstructed ray. Proximity alone does nothing.
+        List<ServerPlayerEntity> looking = world.getPlayers(p -> p.isAlive() && !p.isCreative()
+                && !p.isSpectator() && p.squaredDistanceTo(this) <= 48.0 * 48.0
+                && isDirectlyLookedAt(world, p));
+        if (!looking.isEmpty()) {
+            ServerPlayerEntity player = looking.stream()
                     .min((a, b) -> Double.compare(a.squaredDistanceTo(this), b.squaredDistanceTo(this)))
                     .orElse(null);
             if (player != null) {
                 watchedPlayer = player;
-                float yaw = (float) (Math.atan2(player.getZ() - getZ(), player.getX() - getX()) * 180.0 / Math.PI) - 90.0f;
-                setYaw(yaw); setBodyYaw(yaw); setHeadYaw(yaw);
                 beginDissolve(world, player);
             }
         }
+    }
+
+    private boolean isDirectlyLookedAt(ServerWorld world, ServerPlayerEntity player) {
+        Vec3d eye = player.getEyePos();
+        Vec3d target = getPos().add(0.0, getHeight() * 0.55, 0.0);
+        Vec3d direction = target.subtract(eye).normalize();
+        // Tight gaze cone: the player must aim almost directly at the Observer.
+        if (player.getRotationVec(1.0f).dotProduct(direction) < 0.9925) return false;
+        HitResult obstruction = world.raycast(new RaycastContext(eye, target,
+                RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player));
+        return obstruction.getType() == HitResult.Type.MISS;
     }
 
     public float getDissolveProgress(float tickDelta) {

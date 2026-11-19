@@ -56,7 +56,7 @@ public class StalkerEntity extends HostileEntity {
     private PaintingEntity entrancePainting;
     private PaintingEntity exitPainting;
     private int huntRepositionCooldown;
-    private int stalkingPauseTicks;
+    private int stalkingPauseTicks;\n    private boolean climbing;
 
     /** The Hunter burns, screeches and flees at this light level or brighter. Full daylight is 15. */
     public static final int BURN_LIGHT_LEVEL = 10;
@@ -68,7 +68,7 @@ public class StalkerEntity extends HostileEntity {
     public static DefaultAttributeContainer.Builder createStalkerAttributes() {
         return HostileEntity.createHostileAttributes()
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 70.0)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.31)
+                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.55)
                 .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 56.0)
                 .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 14.0)
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.8);
@@ -101,8 +101,8 @@ public class StalkerEntity extends HostileEntity {
 
     @Override protected void initGoals() {
         goalSelector.add(0, new SwimGoal(this));
-        goalSelector.add(2, new MeleeAttackGoal(this, 1.08, true));
-        goalSelector.add(5, new WanderAroundFarGoal(this, 0.78));
+        goalSelector.add(2, new MeleeAttackGoal(this, 1.45, true));
+        goalSelector.add(5, new WanderAroundFarGoal(this, 1.05));
         goalSelector.add(6, new LookAtEntityGoal(this, PlayerEntity.class, 32.0f));
         goalSelector.add(7, new LookAroundGoal(this));
         targetSelector.add(1, new ActiveTargetGoal<>(this, PlayerEntity.class, true));
@@ -176,7 +176,7 @@ public class StalkerEntity extends HostileEntity {
             if (canSee(target)) {
                 lastKnownPlayerPos = target.getBlockPos().toImmutable();
                 lostSightTicks = 0;
-            } else if (++lostSightTicks > 90) {
+            } else if (++lostSightTicks > 140) {
                 // Stop chasing an unseen player blindly; investigate their last known position.
                 setTarget(null);
                 lostSightTicks = 0;
@@ -189,9 +189,9 @@ public class StalkerEntity extends HostileEntity {
             if (getBlockPos().getSquaredDistance(lastKnownPlayerPos) <= 4 || age % 240 == 0) {
                 lastKnownPlayerPos = null;
             } else if (--investigateCooldown <= 0) {
-                investigateCooldown = 30;
+                investigateCooldown = 12;
                 getNavigation().startMovingTo(lastKnownPlayerPos.getX() + 0.5,
-                        lastKnownPlayerPos.getY(), lastKnownPlayerPos.getZ() + 0.5, 0.92);
+                        lastKnownPlayerPos.getY(), lastKnownPlayerPos.getZ() + 0.5, 1.35);
             }
         }
 
@@ -199,7 +199,7 @@ public class StalkerEntity extends HostileEntity {
         if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
                 && target.canSee(this) && --huntRepositionCooldown <= 0) {
             huntRepositionCooldown = 45 + random.nextInt(45);
-            stalkingPauseTicks = 8 + random.nextInt(12);
+            stalkingPauseTicks = 3 + random.nextInt(5);
             getNavigation().stop();
         }
         if (stalkingPauseTicks > 0) {
@@ -207,11 +207,60 @@ public class StalkerEntity extends HostileEntity {
             if (target != null && target.squaredDistanceTo(this) > 64) getNavigation().stop();
         }
 
+        if (target != null && target.isAlive()) {
+            // Faster pursuit and wall-climbing when the player builds vertically out of reach.
+            getNavigation().startMovingTo(target, 1.5);
+            if (tickClimbing(world, target)) return;
+        } else if (climbing) {
+            climbing = false;
+            setNoGravity(false);
+        }
+
         // Use a dark container or painting as a short-range ambush route, but only after snuffing nearby flames.
         if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
                 && target.squaredDistanceTo(this) < 30 * 30 && age % (truce ? 12 : 18) == 0) {
             tryBeginEnvironmentalTravel(world, target);
         }
+    }
+
+    /**
+     * Climbs solid faces when the target is above and conventional navigation cannot
+     * reach them. Gravity is disabled only during the short wall-climb state.
+     */
+    private boolean tickClimbing(ServerWorld world, PlayerEntity target) {
+        double verticalGap = target.getY() - getY();
+        double horizontalGap = Math.sqrt(target.squaredDistanceTo(getX(), target.getY(), getZ()));
+        if (verticalGap < 1.6 || horizontalGap > 5.5 || isOnFire()
+                || dataTracker.get(TRAVEL_ANIMATION) != 0) {
+            if (climbing) {
+                climbing = false;
+                setNoGravity(false);
+            }
+            return false;
+        }
+
+        Vec3d horizontal = new Vec3d(target.getX() - getX(), 0, target.getZ() - getZ()).normalize();
+        BlockPos forward = getBlockPos().offset(
+                Math.abs(horizontal.x) > Math.abs(horizontal.z)
+                        ? (horizontal.x > 0 ? net.minecraft.util.math.Direction.EAST : net.minecraft.util.math.Direction.WEST)
+                        : (horizontal.z > 0 ? net.minecraft.util.math.Direction.SOUTH : net.minecraft.util.math.Direction.NORTH));
+        boolean wall = !world.getBlockState(forward).getCollisionShape(world, forward).isEmpty()
+                || !world.getBlockState(forward.up()).getCollisionShape(world, forward.up()).isEmpty()
+                || !world.getBlockState(forward.up(2)).getCollisionShape(world, forward.up(2)).isEmpty();
+        if (!wall) {
+            if (climbing) {
+                climbing = false;
+                setNoGravity(false);
+            }
+            return false;
+        }
+
+        climbing = true;
+        setNoGravity(true);
+        getNavigation().stop();
+        double speed = 0.18;
+        setVelocity(horizontal.x * speed, Math.min(0.32, 0.18 + verticalGap * 0.025), horizontal.z * speed);
+        return true;
     }
 
     private boolean tickEnvironmentalTravel(ServerWorld world) {
@@ -401,7 +450,7 @@ public class StalkerEntity extends HostileEntity {
         }
     }
 
-    public boolean isCrawling() { return crawling; }
+    public boolean isCrawling() { return crawling; }\n    public boolean isClimbing() { return climbing; }
     public int getTravelAnimation() { return dataTracker.get(TRAVEL_ANIMATION); }
     public int getTravelAnimationTicks() { return dataTracker.get(TRAVEL_PROGRESS); }
 

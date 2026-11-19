@@ -128,3 +128,15 @@ Still unverified: no Gradle compile or in-game test was possible. Truce timers a
 - Torch snuffing now tries to extinguish up to five visible torches per pass, with a shorter cooldown.
 - The Observer's separate implementation is not included in this source archive; it cannot be directly modified here.
 - Build verification is pending because the archive contains no Gradle build files or wrapper.
+
+
+## Update notes — Observer and Stalker redesign
+
+- Observer disappearance now requires a player to look directly at it with an unobstructed line of sight (tight gaze cone, up to 48 blocks). Proximity and bright light no longer trigger disappearance or burn it away.
+- Increased the Observer per-chunk limit to 20 so more can coexist.
+- Increased Stalker movement speed and pursuit speed; reduced stalking pauses.
+- Added a wall-climbing pursuit state when the player is above the Stalker and a climbable wall face is nearby.
+- Reworked Stalker model proportions: slimmer torso, longer head profile, elongated forearms and legs, and a more hunched crawling/climbing pose.
+- Repainted the Stalker texture with charcoal mottling, scar-like streaks, and subdued red eye details.
+
+Build validation note: this archive does not include a Gradle wrapper JAR, and Gradle was unavailable in the execution environment, so a Minecraft/Fabric build could not be run here.

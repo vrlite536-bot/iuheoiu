@@ -32,19 +32,19 @@ public class StalkerModel<T extends Entity> extends EntityModel<T> {
         ModelData data = new ModelData();
         ModelPartData root = data.getRoot();
         ModelPartData torso = root.addChild("torso", ModelPartBuilder.create()
-                .uv(0, 0).cuboid(-4, -9, -2, 8, 13, 4)
-                .uv(24, 0).cuboid(-3.5f, -12, -2.5f, 7, 4, 5), ModelTransform.pivot(0, 9, 0));
+                .uv(0, 0).cuboid(-3, -10, -2, 6, 15, 4)
+                .uv(24, 0).cuboid(-4, -12, -2.5f, 8, 3, 5), ModelTransform.pivot(0, 9, 0));
         torso.addChild("head", ModelPartBuilder.create()
-                .uv(0, 18).cuboid(-3, -7, -2.5f, 6, 7, 5)
-                .uv(22, 18).cuboid(-1.5f, -8, -2, 3, 2, 4), ModelTransform.pivot(0, -11, 0));
+                .uv(0, 18).cuboid(-3, -8, -2.5f, 6, 8, 5)
+                .uv(22, 18).cuboid(-2, -10, -2, 4, 2, 4), ModelTransform.pivot(0, -12, 0));
         torso.addChild("left_arm", ModelPartBuilder.create().uv(0, 31)
-                .cuboid(-1.5f, -1, -1.5f, 3, 16, 3)
-                .uv(12, 31).cuboid(-1, 13, -1, 2, 7, 2), ModelTransform.pivot(5, -8, 0));
+                .cuboid(-1.5f, -1, -1.5f, 3, 14, 3)
+                .uv(12, 31).cuboid(-1, 12, -1, 2, 9, 2), ModelTransform.pivot(5, -8, 0));
         torso.addChild("right_arm", ModelPartBuilder.create().uv(22, 31)
-                .cuboid(-1.5f, -1, -1.5f, 3, 16, 3)
-                .uv(34, 31).cuboid(-1, 13, -1, 2, 7, 2), ModelTransform.pivot(-5, -8, 0));
-        root.addChild("left_leg", ModelPartBuilder.create().uv(42, 0).cuboid(-1.5f, 0, -1.5f, 3, 13, 3), ModelTransform.pivot(2, 9, 0));
-        root.addChild("right_leg", ModelPartBuilder.create().uv(42, 17).cuboid(-1.5f, 0, -1.5f, 3, 13, 3), ModelTransform.pivot(-2, 9, 0));
+                .cuboid(-1.5f, -1, -1.5f, 3, 14, 3)
+                .uv(34, 31).cuboid(-1, 12, -1, 2, 9, 2), ModelTransform.pivot(-5, -8, 0));
+        root.addChild("left_leg", ModelPartBuilder.create().uv(42, 0).cuboid(-1.5f, 0, -1.5f, 3, 15, 3), ModelTransform.pivot(2, 9, 0));
+        root.addChild("right_leg", ModelPartBuilder.create().uv(42, 17).cuboid(-1.5f, 0, -1.5f, 3, 15, 3), ModelTransform.pivot(-2, 9, 0));
         return TexturedModelData.of(data, 64, 64);
     }
 
@@ -68,6 +68,16 @@ public class StalkerModel<T extends Entity> extends EntityModel<T> {
             leftArm.yaw = -0.18F;
             rightArm.yaw = 0.18F;
             head.pitch = 0.12F;
+        } else if (entity instanceof com.example.thestalker.entity.StalkerEntity climber && climber.isClimbing()) {
+            float reach = MathHelper.sin(animationProgress * 0.5F) * 0.2F;
+            torso.pitch = -0.28F;
+            leftArm.pitch = -2.15F + reach;
+            rightArm.pitch = -1.35F - reach;
+            leftArm.roll = 0.2F;
+            rightArm.roll = -0.2F;
+            leftLeg.pitch = 0.9F + reach;
+            rightLeg.pitch = -0.8F - reach;
+            head.pitch = -0.35F;
         } else if (entity instanceof com.example.thestalker.entity.StalkerEntity animated && animated.getTravelAnimation() == 1) {
             // Fold the shoulders and pull the long arms inward as it crawls into a chest or frame.
             float fold = MathHelper.clamp(animated.getTravelAnimationTicks() / 18.0F, 0.0F, 1.0F);
