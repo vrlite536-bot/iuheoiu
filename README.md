@@ -121,3 +121,10 @@ Still unverified: no Gradle compile or in-game test was possible. Truce timers a
 ## v0.5.5
 
 - **Retreat into smoke:** a Hunter that has been burning continuously for more than 10 seconds (`StalkerEntity.MAX_BURN_TICKS`) dissolves in a burst of smoke with a teleport sound and is removed. The `StalkerDirector` can later send a fresh one.
+
+## Local source patch notes (assistant update)
+- Hunter stalking is more persistent: lost sight is tolerated for 90 ticks, reposition pauses are shorter and occur more often, and environmental ambush attempts are more frequent.
+- Chest/furnace emergence phase is lengthened to 60 ticks (about 3 seconds). The uploaded archive does not include the entity renderer/model animation code, so a true limb-by-limb crawl animation cannot be implemented or verified from these files alone.
+- Torch snuffing now tries to extinguish up to five visible torches per pass, with a shorter cooldown.
+- The Observer's separate implementation is not included in this source archive; it cannot be directly modified here.
+- Build verification is pending because the archive contains no Gradle build files or wrapper.

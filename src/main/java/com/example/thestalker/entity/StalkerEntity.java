@@ -162,7 +162,7 @@ public class StalkerEntity extends HostileEntity {
         }
 
         if (--torchSearchCooldown <= 0) {
-            torchSearchCooldown = 55 + random.nextInt(65);
+            torchSearchCooldown = 25 + random.nextInt(20);
             extinguishNearbyTorch(world);
         }
 
@@ -176,7 +176,7 @@ public class StalkerEntity extends HostileEntity {
             if (canSee(target)) {
                 lastKnownPlayerPos = target.getBlockPos().toImmutable();
                 lostSightTicks = 0;
-            } else if (++lostSightTicks > 45) {
+            } else if (++lostSightTicks > 90) {
                 // Stop chasing an unseen player blindly; investigate their last known position.
                 setTarget(null);
                 lostSightTicks = 0;
@@ -198,8 +198,8 @@ public class StalkerEntity extends HostileEntity {
         // It does not always charge. It occasionally breaks line of sight and approaches from another angle.
         if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
                 && target.canSee(this) && --huntRepositionCooldown <= 0) {
-            huntRepositionCooldown = 100 + random.nextInt(100);
-            stalkingPauseTicks = 18 + random.nextInt(24);
+            huntRepositionCooldown = 45 + random.nextInt(45);
+            stalkingPauseTicks = 8 + random.nextInt(12);
             getNavigation().stop();
         }
         if (stalkingPauseTicks > 0) {
@@ -209,7 +209,7 @@ public class StalkerEntity extends HostileEntity {
 
         // Use a dark container or painting as a short-range ambush route, but only after snuffing nearby flames.
         if (target != null && target.isAlive() && target.squaredDistanceTo(this) > 100
-                && target.squaredDistanceTo(this) < 30 * 30 && age % (truce ? 12 : 30) == 0) {
+                && target.squaredDistanceTo(this) < 30 * 30 && age % (truce ? 12 : 18) == 0) {
             tryBeginEnvironmentalTravel(world, target);
         }
     }
@@ -255,7 +255,7 @@ public class StalkerEntity extends HostileEntity {
                         || world.getBlockState(travelExit).isOf(Blocks.TRAPPED_CHEST)))
                     world.addSyncedBlockEvent(travelExit, world.getBlockState(travelExit).getBlock(), 1, 1);
             }
-            if (travelTicks >= 24) {
+            if (travelTicks >= 60) {
                 if (!travelThroughPainting && travelExit != null
                         && (world.getBlockState(travelExit).isOf(Blocks.CHEST)
                         || world.getBlockState(travelExit).isOf(Blocks.TRAPPED_CHEST)))
@@ -291,7 +291,7 @@ public class StalkerEntity extends HostileEntity {
 
     /** A home ambush is local to the player: the Hunter vanishes, then crawls out of one nearby prop. */
     private void tryBeginEnvironmentalTravel(ServerWorld world, PlayerEntity target) {
-        if (dataTracker.get(TRAVEL_ANIMATION) != 0 || stalkingPauseTicks > 0 || random.nextFloat() > 0.24f) return;
+        if (dataTracker.get(TRAVEL_ANIMATION) != 0 || stalkingPauseTicks > 0 || random.nextFloat() > 0.42f) return;
         BlockPos hidingPlace = findHomeHidingPlace(world, target.getBlockPos(), 11);
         if (hidingPlace == null) return;
 
@@ -437,32 +437,35 @@ public class StalkerEntity extends HostileEntity {
 
     private void extinguishNearbyTorch(ServerWorld world) {
         BlockPos origin = getBlockPos();
-        BlockPos chosen = null;
-        double best = Double.MAX_VALUE;
+        int extinguished = 0;
+        // Search the full radius and extinguish several visible torch sources in one pass.
         for (BlockPos pos : BlockPos.iterateOutwards(origin, 8, 4, 8)) {
-            BlockState state = world.getBlockState(pos);
-            boolean floorTorch = state.isOf(Blocks.TORCH);
-            boolean wallTorch = state.isOf(Blocks.WALL_TORCH);
+            if (extinguished >= 5) break;
+            BlockState old = world.getBlockState(pos);
+            boolean floorTorch = old.isOf(Blocks.TORCH);
+            boolean wallTorch = old.isOf(Blocks.WALL_TORCH);
             if (!floorTorch && !wallTorch) continue;
-            double distance = pos.getSquaredDistance(origin);
-            if (distance >= best || distance > 64) continue;
-            HitResult hit = world.raycast(new RaycastContext(getPos().add(0, crawling ? 0.55 : 1.1, 0),
+            if (pos.getSquaredDistance(origin) > 64) continue;
+            HitResult hit = world.raycast(new RaycastContext(
+                    getPos().add(0, crawling ? 0.55 : 1.1, 0),
                     Vec3d.ofCenter(pos), RaycastContext.ShapeType.OUTLINE,
                     RaycastContext.FluidHandling.NONE, this));
-            if (hit instanceof net.minecraft.util.hit.BlockHitResult blockHit && blockHit.getBlockPos().equals(pos)) {
-                best = distance;
-                chosen = pos.toImmutable();
+            if (!(hit instanceof net.minecraft.util.hit.BlockHitResult blockHit)
+                    || !blockHit.getBlockPos().equals(pos)) continue;
+            BlockState replacement = wallTorch
+                    ? ModBlocks.UNLIT_WALL_TORCH.getDefaultState().with(
+                        net.minecraft.block.WallTorchBlock.FACING,
+                        old.get(net.minecraft.block.WallTorchBlock.FACING))
+                    : ModBlocks.UNLIT_TORCH.getDefaultState();
+            if (world.setBlockState(pos, replacement, 3)) {
+                world.spawnParticles(ParticleTypes.LARGE_SMOKE, pos.getX() + 0.5, pos.getY() + 0.8,
+                        pos.getZ() + 0.5, 5, 0.12, 0.18, 0.12, 0.025);
+                world.spawnParticles(ParticleTypes.SMOKE, pos.getX() + 0.5, pos.getY() + 0.8,
+                        pos.getZ() + 0.5, 12, 0.08, 0.12, 0.08, 0.015);
+                world.playSound(null, pos, SoundEvents.BLOCK_CANDLE_EXTINGUISH,
+                        SoundCategory.BLOCKS, 0.9f, 0.65f);
+                extinguished++;
             }
         }
-        if (chosen == null) return;
-        BlockState old = world.getBlockState(chosen);
-        BlockState replacement = old.isOf(Blocks.WALL_TORCH)
-                ? ModBlocks.UNLIT_WALL_TORCH.getDefaultState().with(net.minecraft.block.WallTorchBlock.FACING,
-                    old.get(net.minecraft.block.WallTorchBlock.FACING))
-                : ModBlocks.UNLIT_TORCH.getDefaultState();
-        world.setBlockState(chosen, replacement, 3);
-        world.spawnParticles(ParticleTypes.LARGE_SMOKE, chosen.getX() + 0.5, chosen.getY() + 0.8, chosen.getZ() + 0.5, 5, 0.12, 0.18, 0.12, 0.025);
-        world.spawnParticles(ParticleTypes.SMOKE, chosen.getX() + 0.5, chosen.getY() + 0.8, chosen.getZ() + 0.5, 12, 0.08, 0.12, 0.08, 0.015);
-        world.playSound(null, chosen, SoundEvents.BLOCK_CANDLE_EXTINGUISH, SoundCategory.BLOCKS, 0.9f, 0.65f);
     }
 }
