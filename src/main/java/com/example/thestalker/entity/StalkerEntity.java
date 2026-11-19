@@ -58,6 +58,7 @@ public class StalkerEntity extends HostileEntity {
     private int huntRepositionCooldown;
     private int stalkingPauseTicks;
     private boolean climbing;
+    private int trappedBlockBreakTicks;
 
     /** The Hunter burns, screeches and flees at this light level or brighter. Full daylight is 15. */
     public static final int BURN_LIGHT_LEVEL = 10;
@@ -69,7 +70,7 @@ public class StalkerEntity extends HostileEntity {
     public static DefaultAttributeContainer.Builder createStalkerAttributes() {
         return HostileEntity.createHostileAttributes()
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 70.0)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.55)
+                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.48)
                 .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 56.0)
                 .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 14.0)
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.8);
@@ -209,9 +210,15 @@ public class StalkerEntity extends HostileEntity {
         }
 
         if (target != null && target.isAlive()) {
-            // Faster pursuit and wall-climbing when the player builds vertically out of reach.
-            getNavigation().startMovingTo(target, 1.5);
+            // Keep pursuing, but route through nearby darkness instead of blindly crossing lit floors.
+            BlockPos darkApproach = findDarkApproach(world, target);
+            if (darkApproach != null) {
+                getNavigation().startMovingTo(darkApproach.getX() + 0.5, darkApproach.getY(), darkApproach.getZ() + 0.5, 1.5);
+            } else {
+                getNavigation().startMovingTo(target, 1.5);
+            }
             if (tickClimbing(world, target)) return;
+            tickSlowBlockBreaking(world, target);
         } else if (climbing) {
             climbing = false;
             setNoGravity(false);
@@ -224,10 +231,60 @@ public class StalkerEntity extends HostileEntity {
         }
     }
 
-    /**
-     * Climbs solid faces when the target is above and conventional navigation cannot
-     * reach them. Gravity is disabled only during the short wall-climb state.
-     */
+    /** Slowly chips through a single non-tile block when stuck against it while pursuing a target. */
+
+    /** Picks a dark, walkable approach point close to the target to preserve light as a countermeasure. */
+    private BlockPos findDarkApproach(ServerWorld world, PlayerEntity target) {
+        BlockPos targetPos = target.getBlockPos();
+        BlockPos best = null;
+        int bestLight = Integer.MAX_VALUE;
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.iterateOutwards(targetPos, 5, 2, 5)) {
+            if (!world.isAir(pos) || !world.isAir(pos.up())
+                    || !world.getBlockState(pos.down()).isSolidBlock(world, pos.down())) continue;
+            int light = world.getLightLevel(pos);
+            // Reject bright destinations outright; if every nearby point is bright, fall back to direct pursuit.
+            if (light >= 8) continue;
+            double targetDistance = pos.getSquaredDistance(targetPos);
+            double stalkerDistance = pos.getSquaredDistance(getBlockPos());
+            if (targetDistance > 25) continue;
+            // Prefer darkness first, then a point that is still close to the player and reachable in practice.
+            double score = light * 100.0 + targetDistance * 2.0 + stalkerDistance * 0.15;
+            if (score < bestDistance) {
+                bestDistance = score;
+                bestLight = light;
+                best = pos.toImmutable();
+            }
+        }
+        return best;
+    }
+
+    private void tickSlowBlockBreaking(ServerWorld world, PlayerEntity target) {
+        if (target == null || target.squaredDistanceTo(this) > 64 || climbing || isOnFire()) {
+            trappedBlockBreakTicks = 0;
+            return;
+        }
+        Vec3d toward = new Vec3d(target.getX() - getX(), 0, target.getZ() - getZ());
+        if (toward.lengthSquared() < 0.0001) { trappedBlockBreakTicks = 0; return; }
+        toward = toward.normalize();
+        BlockPos obstruction = getBlockPos().offset(Math.abs(toward.x) > Math.abs(toward.z)
+                ? (toward.x > 0 ? net.minecraft.util.math.Direction.EAST : net.minecraft.util.math.Direction.WEST)
+                : (toward.z > 0 ? net.minecraft.util.math.Direction.SOUTH : net.minecraft.util.math.Direction.NORTH));
+        BlockState state = world.getBlockState(obstruction);
+        boolean blocked = !state.isAir() && !state.getCollisionShape(world, obstruction).isEmpty()
+                && getNavigation().isIdle() && state.getHardness(world, obstruction) >= 0
+                && !state.hasBlockEntity();
+        if (!blocked) { trappedBlockBreakTicks = 0; return; }
+        trappedBlockBreakTicks++;
+        // About 45 seconds per block: deliberately slow and only when movement is obstructed.
+        if (trappedBlockBreakTicks >= 900) {
+            world.breakBlock(obstruction, true);
+            trappedBlockBreakTicks = 0;
+            world.playSound(null, obstruction, SoundEvents.BLOCK_STONE_BREAK, SoundCategory.BLOCKS, 0.45f, 0.7f);
+        }
+    }
+
+
     private boolean tickClimbing(ServerWorld world, PlayerEntity target) {
         double verticalGap = target.getY() - getY();
         double horizontalGap = Math.sqrt(target.squaredDistanceTo(getX(), target.getY(), getZ()));
@@ -459,7 +516,7 @@ public class StalkerEntity extends HostileEntity {
     @Override public net.minecraft.entity.EntityDimensions getBaseDimensions(net.minecraft.entity.EntityPose pose) {
         // The hitbox follows the visible model: tall while standing, compact only while crawling
         // under a low ceiling, with a matching eye height so line-of-sight checks make sense.
-        if (crawling) return net.minecraft.entity.EntityDimensions.changing(0.6f, 0.9f).withEyeHeight(0.7f);
+        if (crawling) return net.minecraft.entity.EntityDimensions.changing(0.49f, 0.49f).withEyeHeight(0.36f);
         return net.minecraft.entity.EntityDimensions.changing(0.7f, 1.95f).withEyeHeight(1.7f);
     }
 

@@ -17,5 +17,6 @@ public class TheStalkerClient implements ClientModInitializer {
         BlockRenderLayerMap.INSTANCE.putBlocks(RenderLayer.getCutout(),
                 ModBlocks.UNLIT_TORCH, ModBlocks.UNLIT_WALL_TORCH, ModBlocks.UNLIT_LANTERN, ModBlocks.UNLIT_SOUL_LANTERN);
         JumpscareClient.register();
+        InterfaceInvasionClient.register();
     }
 }

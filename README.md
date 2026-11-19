@@ -140,3 +140,10 @@ Still unverified: no Gradle compile or in-game test was possible. Truce timers a
 - Repainted the Stalker texture with charcoal mottling, scar-like streaks, and subdued red eye details.
 
 Build validation note: this archive does not include a Gradle wrapper JAR, and Gradle was unavailable in the execution environment, so a Minecraft/Fabric build could not be run here.
+
+
+## Recent testing changes
+- Stalker movement speed lowered from 0.55 to 0.48.
+- Frequent, client-side interface invasion effects trigger while a Stalker is within 36 blocks: animated red eye over hotbar slot 4 and subtle screen-edge effects on HUD, inventory/crafting, settings, and other screens. These are visual only and do not alter inventory items or block menu controls.
+- Crawling hitbox is 0.49 blocks wide and high, allowing clearance through half-block gaps when crawling.
+- If blocked while pursuing a player, the Stalker can very slowly break one non-tile block in its way after about 45 seconds.
