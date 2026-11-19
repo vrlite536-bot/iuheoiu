@@ -31,7 +31,11 @@ public final class InterfaceInvasionClient {
             }
         });
         HudRenderCallback.EVENT.register((drawContext, tickCounter) -> renderHud(drawContext));
-        ScreenEvents.AFTER_RENDER.register((screen, drawContext, mouseX, mouseY, tickDelta) -> renderScreen(drawContext));
+        ScreenEvents.BEFORE_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            ScreenEvents.afterRender(screen).register(
+                    (screen1, drawContext, mouseX, mouseY, tickDelta) -> renderScreen(drawContext)
+            );
+        });
     }
 
     private static void renderHud(DrawContext context) {
