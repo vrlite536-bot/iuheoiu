@@ -43,6 +43,7 @@ public class StalkerEntity extends HostileEntity {
     private boolean orphanedJumpscare;
     private int torchSearchCooldown;
     private int lightScreechCooldown;
+    private int burningTicks;
     private int darkSearchCooldown;
     private int lostSightTicks;
     private int investigateCooldown;
@@ -59,6 +60,8 @@ public class StalkerEntity extends HostileEntity {
 
     /** The Hunter burns, screeches and flees at this light level or brighter. Full daylight is 15. */
     public static final int BURN_LIGHT_LEVEL = 10;
+    /** After burning continuously for this long (200 ticks = 10 seconds) it retreats into smoke. */
+    public static final int MAX_BURN_TICKS = 200;
 
     public StalkerEntity(EntityType<? extends HostileEntity> type, World world) { super(type, world); }
 
@@ -134,6 +137,13 @@ public class StalkerEntity extends HostileEntity {
         // Travel state is not saved; never leave a Hunter permanently invisible after a reload.
         if (dataTracker.get(TRAVEL_ANIMATION) == 0 && isInvisible()) setInvisible(false);
         if (tickEnvironmentalTravel(world)) return;
+        // Burning for too long drives it back into the dark: it dissolves into smoke and is gone.
+        if (isOnFire()) {
+            if (++burningTicks > MAX_BURN_TICKS) { retreatIntoSmoke(world); return; }
+        } else {
+            burningTicks = 0;
+        }
+
         int light = world.getLightLevel(getBlockPos());
 
         if (light >= BURN_LIGHT_LEVEL) {
@@ -400,6 +410,13 @@ public class StalkerEntity extends HostileEntity {
         // under a low ceiling, with a matching eye height so line-of-sight checks make sense.
         if (crawling) return net.minecraft.entity.EntityDimensions.changing(0.6f, 0.9f).withEyeHeight(0.7f);
         return net.minecraft.entity.EntityDimensions.changing(0.7f, 1.95f).withEyeHeight(1.7f);
+    }
+
+    private void retreatIntoSmoke(ServerWorld world) {
+        world.spawnParticles(ParticleTypes.LARGE_SMOKE, getX(), getY() + 1.0, getZ(), 60, 0.4, 0.8, 0.4, 0.06);
+        world.spawnParticles(ParticleTypes.SMOKE, getX(), getY() + 1.0, getZ(), 40, 0.5, 0.9, 0.5, 0.05);
+        world.playSound(null, getBlockPos(), SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundCategory.HOSTILE, 1.0f, 0.5f);
+        discard();
     }
 
     private void seekDarkness(ServerWorld world) {

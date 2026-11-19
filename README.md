@@ -23,7 +23,7 @@ A dark-survival horror mod prototype for Minecraft Java Edition 1.21.1. Requires
 - A separate hostile entity with melee, wandering, swimming, target acquisition, and look behaviours.
 - Its hitbox matches its model (tall when standing, compact only while crawling beneath a low ceiling), and its model folds into a crawl pose there.
 - Tracks players, remembers last-known positions, investigates when line of sight is lost, pauses when watched at range, and periodically breaks its approach to make stalking less predictable.
-- Seeks dark cover when exposed to light level 10+; light level 10+ (open daylight, or within a few blocks of a torch) causes burning, smoke, and repeated screeches. Shade and dim areas are safe for it.
+- Seeks dark cover when exposed to light level 10+; light level 10+ (open daylight, or within a few blocks of a torch) causes burning, smoke, and repeated screeches. Shade and dim areas are safe for it. If it stays on fire for more than 10 seconds it retreats into smoke and disappears.
 - Periodically extinguishes visible torches and converts them into relightable unlit torches.
 - Has a local home-ambush jumpscare: when the player is near a chest, an unlit furnace, or a painting, the Hunter can vanish and crawl out of that nearby prop. It does not need a second container as an entrance or an exit.
 - Before emerging, it snuffs nearby torches, lanterns, soul lanterns, candles, and campfires. The lights go out first; only then does the Hunter disappear and begin its emergence.
@@ -116,3 +116,8 @@ Still unverified: no Gradle compile or in-game test was possible. Truce timers a
 - **Observer spawning:** rarer (weight 5 down to 3) but now spawns in packs of 1-10, and `getLimitPerChunk` is raised to 10 so vanilla's default cap of 4 per chunk no longer truncates packs. Observers only spawn at light level 3 or lower, so look in caves and dark rooms.
 - **Light wave:** new `LightWaveManager`. An Observer exhales one wave the first time a player comes within 16 blocks. A wave snuffs up to 5 lights within 16 blocks, with an expanding ring of cloud particles, a gust at each light and a swooping sound. `start(...)` is reusable, so any mob can cast one. Constants are at the top of `ObserverEntity.java` and `LightWaveManager.java`.
 - **Unlit torches** (floor and wall) no longer emit ambient smoke.
+
+
+## v0.5.5
+
+- **Retreat into smoke:** a Hunter that has been burning continuously for more than 10 seconds (`StalkerEntity.MAX_BURN_TICKS`) dissolves in a burst of smoke with a teleport sound and is removed. The `StalkerDirector` can later send a fresh one.
