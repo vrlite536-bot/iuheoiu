@@ -1,8 +1,8 @@
 {
   "variants": {
-    "facing=north": { "model": "thestalker:block/unlit_wall_torch", "y": 180 },
-    "facing=south": { "model": "thestalker:block/unlit_wall_torch" },
-    "facing=west": { "model": "thestalker:block/unlit_wall_torch", "y": 90 },
-    "facing=east": { "model": "thestalker:block/unlit_wall_torch", "y": 270 }
+    "facing=east":  { "model": "thestalker:block/unlit_wall_torch" },
+    "facing=south": { "model": "thestalker:block/unlit_wall_torch", "y": 90 },
+    "facing=west":  { "model": "thestalker:block/unlit_wall_torch", "y": 180 },
+    "facing=north": { "model": "thestalker:block/unlit_wall_torch", "y": 270 }
   }
 }

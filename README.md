@@ -22,7 +22,7 @@ A dark-survival horror mod prototype for Minecraft Java Edition 1.21.1. Requires
 - A separate hostile entity with melee, wandering, swimming, target acquisition, and look behaviours.
 - Its hitbox matches its model (tall when standing, compact only while crawling beneath a low ceiling), and its model folds into a crawl pose there.
 - Tracks players, remembers last-known positions, investigates when line of sight is lost, pauses when watched at range, and periodically breaks its approach to make stalking less predictable.
-- Seeks dark cover when exposed to light level 4+; light level 4+ causes burning, smoke, and repeated screeches.
+- Seeks dark cover when exposed to light level 10+; light level 10+ (open daylight, or within a few blocks of a torch) causes burning, smoke, and repeated screeches. Shade and dim areas are safe for it.
 - Periodically extinguishes visible torches and converts them into relightable unlit torches.
 - Has a local home-ambush jumpscare: when the player is near a chest, an unlit furnace, or a painting, the Hunter can vanish and crawl out of that nearby prop. It does not need a second container as an entrance or an exit.
 - Before emerging, it snuffs nearby torches, lanterns, soul lanterns, candles, and campfires. The lights go out first; only then does the Hunter disappear and begin its emergence.
@@ -59,7 +59,7 @@ The output JAR, if the build succeeds, will be in `build/libs/`.
 /give @s thestalker:unlit_soul_lantern
 ```
 
-The entities also have low-weight natural Overworld spawn entries and darkness-based spawn restrictions.
+The entities also have natural Overworld spawn entries (Hunter weight 25, Observer weight 5) and light-based spawn restrictions (the Hunter spawns below light level 10).
 
 
 ### Local container ambushes (0.4.0)
@@ -101,3 +101,10 @@ The source was reviewed and resource files were checked, but no Gradle compilati
 - **Offering:** the light check now uses block light, as documented; a half-finished offering animation is dropped on disconnect.
 
 Still unverified: no Gradle compile or in-game test was possible. Truce timers are still memory-only.
+
+
+## v0.5.3
+
+- **Burn threshold:** the Hunter now only burns at light level 10 or higher (`StalkerEntity.BURN_LIGHT_LEVEL`). The same value controls where it may spawn and when it runs for cover. The Observer is unchanged (still burns at 4+).
+- **Frequency:** natural Hunter spawn weight raised from 2 to 25, and a new `StalkerDirector` sends a Hunter after every survival player in the Overworld from the first minute. Every 10 seconds, a player with no Hunter within 64 blocks has a 50% chance of one appearing 22-38 blocks away, out of sight and below light level 10, already heading for them. Idle Hunters are re-pointed at the player 60% of the time. Creative and spectator players and Peaceful difficulty are skipped. All numbers are constants at the top of `StalkerDirector.java`.
+- **Unlit torch:** texture redrawn on the vanilla torch layout (2px stick, burnt-out tip), cutout render layer registered for torches and lanterns (fixes black boxes), wall-torch rotations corrected, torch items now use a flat sprite.

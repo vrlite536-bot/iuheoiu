@@ -57,6 +57,9 @@ public class StalkerEntity extends HostileEntity {
     private int huntRepositionCooldown;
     private int stalkingPauseTicks;
 
+    /** The Hunter burns, screeches and flees at this light level or brighter. Full daylight is 15. */
+    public static final int BURN_LIGHT_LEVEL = 10;
+
     public StalkerEntity(EntityType<? extends HostileEntity> type, World world) { super(type, world); }
 
     public static DefaultAttributeContainer.Builder createStalkerAttributes() {
@@ -86,6 +89,13 @@ public class StalkerEntity extends HostileEntity {
 
     public boolean isJumpscarePose() { return dataTracker.get(JUMPSCARE_POSE); }
 
+    /** Sends this Hunter after a player, remembering where they are in case sight is lost on the way. */
+    public void beginStalking(PlayerEntity player) {
+        setTarget(player);
+        lastKnownPlayerPos = player.getBlockPos().toImmutable();
+        lostSightTicks = 0;
+    }
+
     @Override protected void initGoals() {
         goalSelector.add(0, new SwimGoal(this));
         goalSelector.add(2, new MeleeAttackGoal(this, 1.08, true));
@@ -97,7 +107,7 @@ public class StalkerEntity extends HostileEntity {
 
     public static boolean canSpawn(EntityType<StalkerEntity> type, ServerWorldAccess world,
                                    SpawnReason reason, BlockPos pos, net.minecraft.util.math.random.Random random) {
-        return world.getLightLevel(pos) <= 3 && world.getBlockState(pos.down()).isSolidBlock(world, pos.down());
+        return world.getLightLevel(pos) < BURN_LIGHT_LEVEL && world.getBlockState(pos.down()).isSolidBlock(world, pos.down());
     }
 
     @Override public void writeCustomDataToNbt(net.minecraft.nbt.NbtCompound nbt) {
@@ -126,7 +136,7 @@ public class StalkerEntity extends HostileEntity {
         if (tickEnvironmentalTravel(world)) return;
         int light = world.getLightLevel(getBlockPos());
 
-        if (light >= 4) {
+        if (light >= BURN_LIGHT_LEVEL) {
             setOnFireFor(2);
             getNavigation().stop();
             if (--lightScreechCooldown <= 0) {
@@ -405,7 +415,7 @@ public class StalkerEntity extends HostileEntity {
                 best = pos.toImmutable(); bestLight = light; bestDistance = distance;
             }
         }
-        if (best != null && bestLight <= 3) getNavigation().startMovingTo(best.getX() + 0.5, best.getY(), best.getZ() + 0.5, 1.15);
+        if (best != null && bestLight < BURN_LIGHT_LEVEL) getNavigation().startMovingTo(best.getX() + 0.5, best.getY(), best.getZ() + 0.5, 1.15);
     }
 
     private void extinguishNearbyTorch(ServerWorld world) {

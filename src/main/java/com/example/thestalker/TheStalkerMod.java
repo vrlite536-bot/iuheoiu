@@ -3,6 +3,7 @@ package com.example.thestalker;
 import com.example.thestalker.block.ModBlocks;
 import com.example.thestalker.entity.AmbushManager;
 import com.example.thestalker.entity.OfferingManager;
+import com.example.thestalker.entity.StalkerDirector;
 import com.example.thestalker.registry.ModEntities;
 import com.example.thestalker.entity.ObserverEntity;
 import com.example.thestalker.entity.StalkerEntity;
@@ -33,12 +34,13 @@ public class TheStalkerMod implements ModInitializer {
         FabricDefaultAttributeRegistry.register(ModEntities.STALKER, StalkerEntity.createStalkerAttributes());
         ServerTickEvents.END_SERVER_TICK.register(OfferingManager::tick);
         ServerTickEvents.END_SERVER_TICK.register(AmbushManager::tick);
+        ServerTickEvents.END_SERVER_TICK.register(StalkerDirector::tick);
         // Do not leave a delayed lethal cinematic attached to a player who disconnects.
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             AmbushManager.cancel(handler.player);
             OfferingManager.clearAnimation(handler.player);
         });
-        BiomeModifications.addSpawn(BiomeSelectors.foundInOverworld(), SpawnGroup.MONSTER, ModEntities.STALKER, 2, 1, 1);
+        BiomeModifications.addSpawn(BiomeSelectors.foundInOverworld(), SpawnGroup.MONSTER, ModEntities.STALKER, 25, 1, 1);
         BiomeModifications.addSpawn(BiomeSelectors.foundInOverworld(), SpawnGroup.MONSTER, ModEntities.OBSERVER, 5, 1, 1);
         LOGGER.info("The Stalker has entered the dark.");
     }
