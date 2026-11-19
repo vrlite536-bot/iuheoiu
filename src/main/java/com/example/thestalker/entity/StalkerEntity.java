@@ -385,7 +385,7 @@ public class StalkerEntity extends HostileEntity {
     public int getTravelAnimation() { return dataTracker.get(TRAVEL_ANIMATION); }
     public int getTravelAnimationTicks() { return dataTracker.get(TRAVEL_PROGRESS); }
 
-    @Override public net.minecraft.entity.EntityDimensions getDimensions(net.minecraft.entity.EntityPose pose) {
+    @Override public net.minecraft.entity.EntityDimensions getBaseDimensions(net.minecraft.entity.EntityPose pose) {
         // The hitbox follows the visible model: tall while standing, compact only while crawling
         // under a low ceiling, with a matching eye height so line-of-sight checks make sense.
         if (crawling) return net.minecraft.entity.EntityDimensions.changing(0.6f, 0.9f).withEyeHeight(0.7f);
@@ -422,7 +422,7 @@ public class StalkerEntity extends HostileEntity {
             HitResult hit = world.raycast(new RaycastContext(getPos().add(0, crawling ? 0.55 : 1.1, 0),
                     Vec3d.ofCenter(pos), RaycastContext.ShapeType.OUTLINE,
                     RaycastContext.FluidHandling.NONE, this));
-            if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(pos)) {
+            if (hit instanceof net.minecraft.util.hit.BlockHitResult blockHit && blockHit.getBlockPos().equals(pos)) {
                 best = distance;
                 chosen = pos.toImmutable();
             }
