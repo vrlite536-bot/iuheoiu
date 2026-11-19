@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "hanging=false": {
+      "model": "thestalker:block/unlit_lantern"
+    },
+    "hanging=true": {
+      "model": "thestalker:block/unlit_lantern_hanging"
+    }
+  }
+}

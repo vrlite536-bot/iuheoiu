@@ -1,0 +1,8 @@
+{
+  "block.thestalker.unlit_torch": "Unlit Torch",
+  "block.thestalker.unlit_wall_torch": "Unlit Wall Torch",
+  "entity.thestalker.observer": "The Observer",
+  "entity.thestalker.stalker": "The Stalker",
+  "block.thestalker.unlit_lantern": "Unlit Lantern",
+  "block.thestalker.unlit_soul_lantern": "Unlit Soul Lantern"
+}
