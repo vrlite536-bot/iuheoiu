@@ -19,7 +19,7 @@ public class UnlitWallTorchBlock extends WallTorchBlock {
         if (!world.isClient) {
             world.setBlockState(pos, Blocks.WALL_TORCH.getDefaultState().with(FACING, state.get(FACING)), 3);
             world.playSound(null, pos, SoundEvents.ITEM_FLINTANDSTEEL_USE, SoundCategory.BLOCKS, 0.45f, 1.25f);
-            world.spawnParticles(ParticleTypes.FLAME, pos.getX() + 0.5, pos.getY() + 0.75, pos.getZ() + 0.5, 3, 0.02, 0.02, 0.02, 0.01);
+            ((net.minecraft.server.world.ServerWorld) world).spawnParticles(ParticleTypes.FLAME, pos.getX() + 0.5, pos.getY() + 0.75, pos.getZ() + 0.5, 3, 0.02, 0.02, 0.02, 0.01);
         }
         return ActionResult.SUCCESS;
     }
